@@ -148,8 +148,6 @@ def process_gz(data):
 
 def get_freq(data):
     # 可视化绘图
-    for i in set(_flatten(list(data['房屋所在位置'].str.split('    -  ')))):
-        add_word(i)
     for i in set(data['房屋户型']):
         add_word(i)
     add_word('望花园')
