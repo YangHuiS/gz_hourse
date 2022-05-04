@@ -16,7 +16,6 @@ from lxml import etree
 import os
 import plotly.express as px
 from jieba import lcut, load_userdict, add_word
-from tkinter import _flatten
 import matplotlib.pyplot as plt
 
 import warnings
@@ -156,7 +155,9 @@ def get_freq(data):
     add_word('望花园')
     add_word('刚需')
     load_userdict('./guangzhou.txt')
-    num = pd.Series(_flatten(list(data['房屋标题'].apply(lcut)))).value_counts()
+    t = [' '.join(i) for i in data['房屋标题'].apply(lcut)]
+    t = ' '.join(t)
+    num = pd.Series(t.split(' ')).value_counts()
     freq = num[[i for i in num.index if i not in [' ', '，', '。']]]
     return freq
 
