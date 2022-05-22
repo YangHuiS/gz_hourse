@@ -17,7 +17,9 @@ import os
 import plotly.express as px
 from jieba import lcut, load_userdict, add_word
 import matplotlib.pyplot as plt
-
+from factor_analyzer import FactorAnalyzer
+from factor_analyzer.factor_analyzer import calculate_bartlett_sphericity,calculate_kmo
+import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -209,8 +211,9 @@ def main():
 
     st.write('## :dizzy:描述性统计')
     with st.expander('点击查看'):
+        citys = st.multiselect('选择查看的城市：👇', ['北京', '上海', '广州', '佛山', '杭州', '海口'])
         tmp = data2.describe()
-        st.dataframe(tmp)
+        st.dataframe(tmp[citys])
 
     st.write('## :dizzy:数据可视化')
     with st.expander('点击查看'):
@@ -353,46 +356,103 @@ def main():
             fig = px.box(pd.pivot(gz_data2, columns='房间数量', values='房屋总价'))
             st.plotly_chart(fig, use_container_width=True)
 
+    st.write('## :dizzy:因子分析')
+    df = gz_data2[['房屋套内面积', '厅数量', '房间数量', '楼龄']]
+    st.write('KMO检验 VS Bartlett检验')
+    col1, col2 = st.columns(2)
+    with col1:
+        with st.expander('KMO检验'):
+            kmo_all, kmo_model = calculate_kmo(df)
+            st.write(kmo_all, kmo_model)
+            st.write('''
+            KMO(Kaiser-Meyer-Olkin)检验统计量是用于比较变量间简单相关系数和偏相关系数的指标。主要应用于多元统计的因子分析。KMO统计量是取值在0和1之间。
+            
+            当所有变量间的简单相关系数平方和远远大于偏相关系数平方和时，KMO值越接近于1，意味着变量间的相关性越强，原有变量越适合作因子分析；当所有变量间的简单相关系数平方和接近0时，KMO值越接近于0,意味着变量间的相关性越弱，原有变量越不适合作因子分析。
+            ''')
+    with col2:
+        with st.expander('Bartlett检验'):
+            chi_square_value, p_value = calculate_bartlett_sphericity(df)
+            st.write(chi_square_value, p_value)
+            st.write('''
+            Bartlett's球状检验是一种数学术语。用于检验相关阵中各变量间的相关性，是否为单位阵，即检验各个变量是否各自独立。
+            
+            因子分析前，首先进行KMO检验和巴特利球体检验。在因子分析中，若拒绝原假设，则说明可以做因子分析，若不拒绝原假设，则说明这些变量可能独立提供一些信息，不适合做因子分析。
+            ''')
+            # 通常KMO值的判断标准为0.6。大于0.6说明适合进行分析，反之，说明不适合进行分析。同时Bartlett检验对应P值小于0.05也说明适合分析。
+
+    with st.expander('判断提取因子个数'):
+        # 计算相关矩阵的特征值，进行降序排列
+        faa = FactorAnalyzer(25, rotation=None)
+        faa.fit(df)
+        # 得到特征值ev、特征向量v
+        ev, v = faa.get_eigenvalues()
+        # st.write('特征值ev、特征向量v')
+        st.line_chart(pd.DataFrame(ev, index=range(1, df.shape[1] + 1)))
+
+    st.write('建立因子分析模型')
+    ind = st.slider('请选择因子个数', min_value=2, max_value=len(df.columns))  # 选择方式： varimax 方差最大化
+    faa_two = FactorAnalyzer(ind, rotation='varimax')
+    faa_two.fit(df)
+    col1, col2 = st.columns(2)
+    with col1:
+        with st.expander('查看公因子方差'):  # 公因子方差
+            st.dataframe(pd.DataFrame(faa_two.get_communalities(), index=df.columns))
+    with col2:
+        with st.expander('查看旋转后的特征值'):
+            st.dataframe(pd.DataFrame(faa_two.get_eigenvalues()))
+    col3, col4 = st.columns(2)
+    with col3:
+        with st.expander('查看成分矩阵'):
+            st.dataframe(pd.DataFrame(faa_two.loadings_, index=df.columns))
+    with col4:
+        with st.expander('查看因子贡献率'):
+            corr = pd.DataFrame(np.abs(faa_two.loadings_), index=df.columns)
+            st.dataframe(corr)
+    with st.expander('查看转换后的数据'):
+        df = faa_two.transform(df)
+        st.dataframe(df)
+
     st.write('## :dizzy:广州二手房总价与房屋面积、房间数量、厅数量、楼龄的关系')
     with st.expander('点击查看相关关系'):
-        x = gz_data2[['房屋套内面积', '厅数量', '房间数量', '楼龄']]
+        x = df.copy()
         y = gz_data2['房屋总价']
         from sklearn.linear_model import LinearRegression
         model = LinearRegression()
         model.fit(x, y)
         st.markdown(
-            f'$$y = {model.coef_[0]:.2f}*x_1 + {model.coef_[1]:.2f}*x_2 + {model.coef_[2]:.2f}*x_3 + {model.coef_[3]:.2f}*x_4 + {model.intercept_:.2f}$$')
-        st.markdown(
-            '''
-            - $x_1$: 房屋套内面积
-            - $x_2$: 厅数量
-            - $x_3$: 房间数量
-            - $x_4$: 楼龄
-            '''
-        )
+            f'权重：{np.round(model.coef_, 2)}  \n\n 偏置项：{model.intercept_:.2f}')
 
 # %% ----------网页设置----------
 st.set_page_config(
     page_title="热门城市房价采集及分析", page_icon=":rainbow:",
     layout='wide', initial_sidebar_state="auto",
 )
+img_url = 'https://tse1-mm.cn.bing.net/th/id/OIP-C.78DjC2sa79sEKBF48FDgvAHaD1?pid=ImgDet&rs=1'
+# img_url = 'https://tse1-mm.cn.bing.net/th/id/R-C.7bfb3bb6c3af83a23930bf722001801c?rik=3Ra%2bFal6hiLpww&riu=http%3a%2f%2fimg.17sucai.com%2fupload%2f55%2f2013-05-20%2fda9e9bf1657fe276e71866a72117be29.png%3fx-oss-process%3dstyle%2fpri&ehk=cp%2finwNR2sllDfJD%2bCpTUPjw757sOqz95%2fZ5vTPdXOo%3d&risl=&pid=ImgRaw&r=0'
+# 通过markdown加载背景图（可以是动图、静图）
+st.markdown('''
+<style>
+.css-fg4pbf {background-image: url(''' + img_url + ''');}</style>
+''', unsafe_allow_html=True)
+
 
 st.sidebar.title('虚拟仿真实验')
-
 session_id = get_report_ctx().session_id
 sessions = Server.get_current()._session_info_by_id
 session_ws = sessions[session_id].ws
 
+st.sidebar.button('房地产数据')
+st.sidebar.button('环境数据')
+st.sidebar.button('消费数据')
+main()
+# if st.sidebar.button('环境数据'):
+#     # st.write('敬请期待')
+#     j = plt.imread('qi.jpg')
+#     st.image(j)
+# if st.sidebar.button('消费数据'):
+#     # st.write('敬请期待')
+#     j = plt.imread('qi.jpg')
+#     st.image(j)
 
-if st.sidebar.button('房地产数据'):
-    main()
-if st.sidebar.button('环境数据'):
-    # st.write('敬请期待')
-    j = plt.imread('qi.jpg')
-    st.image(j)
-if st.sidebar.button('消费数据'):
-    # st.write('敬请期待')
-    j = plt.imread('qi.jpg')
-    st.image(j)
 
 st.sidebar.info(f'当前在线人数：{len(sessions)}')
